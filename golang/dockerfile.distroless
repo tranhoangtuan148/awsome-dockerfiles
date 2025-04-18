@@ -1,0 +1,31 @@
+FROM golang:1.24.1-alpine AS builder
+
+WORKDIR /app
+
+# First copy only go.mod and go.sum to cache dependencies
+COPY go.mod go.sum ./
+
+# Use buildkit cache mount to speed up downloads of modules
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go mod download && go mod verify
+
+# Copy the rest of the source code
+COPY . .
+
+# Build with caching enabled
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -o /app/main -ldflags "-s -w" main.go
+
+FROM gcr.io/distroless/static-debian12
+
+ENV TZ=UTC
+
+WORKDIR /app
+
+COPY --from=builder /app/main .
+
+EXPOSE 3000
+
+ENTRYPOINT ["/app/main"]
